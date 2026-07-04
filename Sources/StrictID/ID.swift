@@ -206,8 +206,8 @@ extension ID {
     ///   character (for example `"_U"`).
     public init(externalUUID uuid: UUID, entityKind: String = ID.defaultExternalEntityKind) throws(E) {
         guard entityKind.count == 2,
-              entityKind.first == Self.underscore,
-              entityKind.last != Self.underscore
+            entityKind.first == Self.underscore,
+            entityKind.last != Self.underscore
         else {
             throw E.InvalidExternalEntityKind
         }
@@ -256,9 +256,9 @@ extension ID {
         let mask42: UInt64 = (1 << 42) - 1
         let mask22: UInt64 = (1 << 22) - 1
 
-        let identifier = lo & mask53                            // bits 0..52
-        let shard = (lo >> 53) | ((hi & mask42) << 11)          // bits 53..105
-        let slot = (hi >> 42) & mask22                          // bits 106..127
+        let identifier = lo & mask53  // bits 0..52
+        let shard = (lo >> 53) | ((hi & mask42) << 11)  // bits 53..105
+        let slot = (hi >> 42) & mask22  // bits 106..127
 
         return [RawValue(shard), RawValue(slot), RawValue(identifier)]
     }

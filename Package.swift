@@ -10,10 +10,10 @@ let package = Package(
         .library(
             name: "StrictID",
             targets: ["StrictID"]
-        ),
+        )
     ],
     dependencies: [
-        .package(url: "https://github.com/sqids/sqids-swift.git", from: "0.1.2"),
+        .package(url: "https://github.com/sqids/sqids-swift.git", from: "0.1.2")
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -21,7 +21,7 @@ let package = Package(
         .target(
             name: "StrictID",
             dependencies: [
-                .product(name: "sqids", package: "sqids-swift"),
+                .product(name: "sqids", package: "sqids-swift")
             ]
         ),
         .testTarget(

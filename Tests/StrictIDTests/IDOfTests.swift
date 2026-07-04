@@ -51,7 +51,7 @@ struct IDOfTests {
 
     @Test("init(base:) throws WrongIdPrefix on a mismatched prefix")
     func initWrongPrefix() throws {
-        let base = try makeBaseID(prefix: "B") // Beta prefix, but Alpha is expected
+        let base = try makeBaseID(prefix: "B")  // Beta prefix, but Alpha is expected
         #expect {
             try IDOf<Alpha>(base: base)
         } throws: { error in
@@ -69,7 +69,7 @@ struct IDOfTests {
 
     @Test("init(base:) rejects a mismatched two-character prefix")
     func initWrongTwoCharPrefix() throws {
-        let base = try makeBaseID(prefix: "A") // single-character instead of two-character
+        let base = try makeBaseID(prefix: "A")  // single-character instead of two-character
         #expect {
             try IDOf<TwoChar>(base: base)
         } throws: { error in

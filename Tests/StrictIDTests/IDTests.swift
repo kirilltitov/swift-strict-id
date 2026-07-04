@@ -267,11 +267,13 @@ struct IDTests {
 
     // MARK: - Large values
 
-    @Test("Round-trip: values on the order of a million", arguments: [
-        (shard: Int64(1_000_000),     identifier: Int64(999_999)),
-        (shard: Int64(999_999),       identifier: Int64(1_000_000)),
-        (shard: Int64(1_234_567),     identifier: Int64(7_654_321)),
-    ])
+    @Test(
+        "Round-trip: values on the order of a million",
+        arguments: [
+            (shard: Int64(1_000_000), identifier: Int64(999_999)),
+            (shard: Int64(999_999), identifier: Int64(1_000_000)),
+            (shard: Int64(1_234_567), identifier: Int64(7_654_321)),
+        ])
     func largeMillion(pair: (shard: Int64, identifier: Int64)) throws {
         let original = try ID(shardNumber: pair.shard, identifier: pair.identifier, entityKind: "P")
         let restored = try ID.parse(input: original.stringValue)
@@ -280,11 +282,13 @@ struct IDTests {
         #expect(original.identifier == restored.identifier)
     }
 
-    @Test("Round-trip: values on the order of a billion", arguments: [
-        (shard: Int64(1_000_000_000),   identifier: Int64(999_999_999)),
-        (shard: Int64(999_999_999),     identifier: Int64(1_000_000_000)),
-        (shard: Int64(1_234_567_890),   identifier: Int64(9_876_543_210)),
-    ])
+    @Test(
+        "Round-trip: values on the order of a billion",
+        arguments: [
+            (shard: Int64(1_000_000_000), identifier: Int64(999_999_999)),
+            (shard: Int64(999_999_999), identifier: Int64(1_000_000_000)),
+            (shard: Int64(1_234_567_890), identifier: Int64(9_876_543_210)),
+        ])
     func largeBillion(pair: (shard: Int64, identifier: Int64)) throws {
         let original = try ID(shardNumber: pair.shard, identifier: pair.identifier, entityKind: "PL")
         let restored = try ID.parse(input: original.stringValue)
@@ -293,11 +297,13 @@ struct IDTests {
         #expect(original.identifier == restored.identifier)
     }
 
-    @Test("Round-trip: values on the order of a trillion", arguments: [
-        (shard: Int64(1_000_000_000_000),   identifier: Int64(999_999_999_999)),
-        (shard: Int64(999_999_999_999),     identifier: Int64(1_000_000_000_000)),
-        (shard: Int64(1_234_567_890_123),   identifier: Int64(9_007_199_254_000_000)),
-    ])
+    @Test(
+        "Round-trip: values on the order of a trillion",
+        arguments: [
+            (shard: Int64(1_000_000_000_000), identifier: Int64(999_999_999_999)),
+            (shard: Int64(999_999_999_999), identifier: Int64(1_000_000_000_000)),
+            (shard: Int64(1_234_567_890_123), identifier: Int64(9_007_199_254_000_000)),
+        ])
     func largeTrillion(pair: (shard: Int64, identifier: Int64)) throws {
         let original = try ID(shardNumber: pair.shard, identifier: pair.identifier, entityKind: "T")
         let restored = try ID.parse(input: original.stringValue)

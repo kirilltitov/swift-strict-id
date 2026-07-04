@@ -74,8 +74,8 @@ struct ExternalUUIDTests {
             let uuid = UUID()
             let tuple = ID.pack(uuid)
             #expect(tuple.count == 3)
-            #expect(tuple[2] <= ID.maxIdentifier)        // identifier slot within bounds
-            #expect(tuple.allSatisfy { $0 >= 0 })        // sqids requires non-negative values
+            #expect(tuple[2] <= ID.maxIdentifier)  // identifier slot within bounds
+            #expect(tuple.allSatisfy { $0 >= 0 })  // sqids requires non-negative values
             #expect(ID.unpack(tuple) == uuid)
         }
     }
