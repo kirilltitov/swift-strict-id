@@ -23,11 +23,15 @@ public struct IDOf<T: IDPrefixable>: Sendable {
         self.base = base
     }
 
-    public static func parse(input: String, mode: ID.SeparatorMode = ID.separatorMode) throws(E) -> Self {
+    public static func parse(
+        input: String,
+        alphabet: ID.Alphabet = ID.configuration.alphabet,
+        mode: ID.SeparatorMode = ID.configuration.separatorMode
+    ) throws(E) -> Self {
         let baseId: ID
 
         do throws(ID.E) {
-            baseId = try ID.parse(input: input, mode: mode)
+            baseId = try ID.parse(input: input, alphabet: alphabet, mode: mode)
         } catch {
             throw E.ParseError(error)
         }

@@ -10,9 +10,12 @@ print(id) // "O_nqZUh6AO"
 
 A Go implementation of the same wire format is available at
 [strictid](https://github.com/kirilltitov/strictid) — the two libraries exchange IDs across service
-boundaries in both directions out of the box. The Go one still *renders* the legacy separator
-(see [Separator formats](#separator-formats-and-compatibility)), so if byte-identical output on both
-sides matters to you, set `ID.separatorMode = .legacy` here until it catches up.
+boundaries in both directions out of the box, as long as both sides use the default alphabet. Two
+things haven't reached the Go side yet: it still *renders* the legacy separator (see
+[Separator formats](#separator-formats-and-compatibility)), so byte-identical output needs
+`try ID.bootstrap(separatorMode: .legacy)` here until it catches up; and it has no configurable
+[alphabet](#alphabets), so a custom or seeded alphabet is Swift-only for now — the seeded permutation
+is specified precisely enough to port, and pinned by golden vectors.
 
 ## Why
 
@@ -70,9 +73,10 @@ so without this salt an `Organization` with `shardNumber=1, identifier=1` and a 
 `shardNumber=1, identifier=1` would encode to the exact same body, differing only by prefix.
 `bytesSum` removes that last coincidence too.
 
-The sqids alphabet (`ID.alphabet`) is 62 characters: `0-9` and Latin letters in both cases,
-sorted. The underscore is not part of the alphabet and is reserved for prefix separators, so an
-ID body can never accidentally contain `_` and create ambiguity while parsing.
+The alphabet (`ID.alphabet`) is 62 characters by default: `0-9` and Latin letters in both cases, in
+code-point order. Its size and order are configurable — see [Alphabets](#alphabets). The underscore
+is never part of an alphabet and is reserved for prefix separators, so an ID body can never
+accidentally contain `_` and create ambiguity while parsing.
 
 ## Separator formats and compatibility
 
@@ -98,11 +102,11 @@ both formats.
 Anything that matches neither format — three underscores in a row, say — is rejected in every mode
 with `ID.E.InvalidPrefixSeparator`, as is a format a strict mode doesn't accept.
 
-The mode is a process-wide switch, with a per-call override wherever one process has to deal with
-both formats at once:
+The mode is part of the [bootstrapped configuration](#bootstrap), with a per-call override wherever
+one process has to deal with both formats at once:
 
 ```swift
-ID.separatorMode = .legacy  // once, at startup, before any ID is created or parsed
+try ID.bootstrap(separatorMode: .legacy)  // once, at startup
 
 let id = try ID(shardNumber: 7, identifier: 12345, entityKind: "O", mode: .modern)
 let parsed = try ID.parse(input: incoming, mode: .strictLegacy)
@@ -133,6 +137,170 @@ re-render it from its parts:
 ```swift
 let modern = try ID(rawValues: legacy.rawValues, entityKind: legacy.entityKind, mode: .modern)
 ```
+
+## Alphabets
+
+The 62 built-in symbols are a default, not a constraint. `ID.Alphabet` lets a deployment pick both
+the *set* of symbols and their *order*:
+
+```swift
+let hex = try ID.Alphabet("0123456789abcdef")                     // smaller set, longer bodies
+let unmistakable = try ID.Alphabet("346789ABCDEFGHJKMNPQRTVWXY")  // nothing that reads as 0/O or 1/l
+let widest = try ID.Alphabet(ID.Alphabet.allowedSymbols)          // all 93, shortest bodies
+let reversed = try ID.Alphabet(ID.Alphabet.default.symbols.reversed())
+```
+
+Reordering by hand is exactly that — hand the symbols over in the order you want. The order is part
+of the format: the same numbers over the same symbols in a different order encode to a different
+string.
+
+### What a symbol can be
+
+Symbols are limited to what sqids itself can encode: **printable ASCII**, no space, and not the
+reserved `_`. That's `ID.Alphabet.allowedSymbols`, 93 characters — which makes 93 the largest an
+alphabet can be, and `ID.Alphabet.minCount` (3) the smallest.
+
+Non-ASCII alphabets — Cyrillic, Greek, emoji — are out of reach. sqids reads the byte value of every
+character while shuffling its internal alphabet, so the algorithm is ASCII-only by construction;
+that's a property of sqids and of this wire format, not a limitation of the Swift side. (Seeds are a
+different matter — those are arbitrary strings and may hold anything.)
+
+Invalid symbols are rejected when the alphabet is built, each with its own error: `TooFewSymbols`,
+`DuplicateSymbols`, `ReservedSeparatorSymbol`, `NonASCIISymbols`, `NonPrintableSymbols`.
+
+> [!CAUTION]
+> **The wide alphabet is not safe to paste anywhere.** `allowedSymbols` is everything *sqids* can
+> encode, which is a much lower bar than "everything your systems can carry unescaped". Reach past
+> the 62 alphanumerics and identifiers start coming out like `O_C[4<KD}u`, `O_$a"b\c` or `O_x?y&z`,
+> which means:
+>
+> - **URLs** — `# ? & % + / = ;` change what a URL *means* rather than just looking odd, so every
+>   identifier has to be percent-encoded on the way into a path, query or fragment, and decoded on
+>   the way out. Miss one spot and you truncate or split the identifier silently.
+> - **JSON, XML, HTML** — `"` and `\` need escaping in JSON strings; `< > &` need it in XML/HTML.
+> - **Shells, filenames, CSV** — `$ ` `` ` `` `* ~ | < > ; & ( ) '` are shell metacharacters, `/`
+>   can't appear in a filename, `,` and `"` break naive CSV.
+> - **Logs, regexes, globs** — `. * + ? [ ] ( ) { } | ^ $ \` are regex metacharacters, so grepping
+>   for an identifier stops working the way you expect.
+>
+> Only the default 62 travel through all of that unescaped. If you want a bigger alphabet that's
+> still safe everywhere, the RFC 3986 *unreserved* set is the ceiling — alphanumerics plus `-`, `.`,
+> `~` (and `_`, which this format already spends on the separator):
+>
+> ```swift
+> let urlSafe = try ID.Alphabet(ID.Alphabet.default.symbols + ["-", ".", "~"])  // 65 symbols
+> ```
+>
+> Everything beyond those 65 buys you a fraction of a character in length and hands you an escaping
+> problem in every layer the identifier passes through. The library won't stop you — the point of
+> `allowedSymbols` is to expose the whole range sqids permits — but this is the trade you're making.
+
+Fewer symbols means longer bodies, more symbols means shorter ones, and the gain flattens out fast.
+The same `(shardNumber: 7, identifier: 12345, entityKind: "O")` across five alphabets:
+
+| Alphabet                       | Size | `stringValue`                   | Safe unescaped?           |
+|--------------------------------|-----:|---------------------------------|---------------------------|
+| `"abc"`                        | 3    | `O_ccccbbccbbbbabbccccccbbbccb` | yes                       |
+| `"0123456789abcdef"`           | 16   | `O_bd747ae812`                  | yes                       |
+| `.default`                     | 62   | `O_ApB7Jf7b0`                   | yes                       |
+| `.default.symbols + ["-",".","~"]` | 65 | `O_Ho8rT-WvQ`                 | yes (RFC 3986 unreserved) |
+| `allowedSymbols`               | 93   | `O_C[4<KD}u`                    | **no** — see above        |
+
+How little the wide alphabet buys is worth seeing plainly: the longest identifier this format can
+produce (`identifier: ID.maxIdentifier`, a six-figure shard) is 20 characters on the default 62, 20
+on the 65-symbol unreserved set, and 19 on all 93. One character, in exchange for escaping.
+
+### Permuting the alphabet with a secret seed
+
+An alphabet permuted by a seed keeps its symbols but changes what they mean, so identifiers stop
+being readable by anybody running stock sqids over the standard alphabet:
+
+```swift
+// the seed is a runtime secret — an env var, a secrets manager, a mounted file
+guard let secret = ProcessInfo.processInfo.environment["STRICT_ID_SEED"] else {
+    // `seed:` is optional and nil means "don't permute", so a missing secret would
+    // silently fall back to the standard order — fail loudly instead
+    fatalError("STRICT_ID_SEED is not set")
+}
+try ID.bootstrap(seed: secret)
+
+// or, if you want the alphabet in hand
+let alphabet = ID.Alphabet.default.shuffled(seed: secret)
+```
+
+The seed is an arbitrary string — base64 out of `openssl rand -base64 32`, a passphrase, anything;
+what's inside it is your business. The permutation it produces is stable forever: same seed, same
+order, on every platform, in every Swift version, and in any other implementation that follows the
+recipe below. The seed itself is never stored — only the resulting order, from which it can't be
+recovered.
+
+> [!WARNING]
+> **This is obfuscation, not encryption.** sqids is not a cipher and neither is a permuted alphabet.
+> A seeded order only makes identifiers unguessable to someone who hasn't seen enough of them:
+> anybody who collects a modest number of your identifiers — or who reads the seed out of your
+> environment, configuration or a crash dump — can recover the ordering. Never treat a secret seed as
+> access control, authentication, or a reason to let an identifier stand in for a capability.
+
+> [!WARNING]
+> **There is no integrity check.** Reading an identifier with the wrong alphabet usually fails, but
+> not reliably. A wrong alphabet holding a *different* symbol set always fails. A wrong alphabet
+> holding the *same* symbols in a different order fails around 99% of the time and, for the rest,
+> decodes to **different numbers** without complaining — never to the right ones, and never
+> detectably. The format carries no checksum, so an identifier is only as trustworthy as the
+> alphabet you read it with. Rotating a seed rewrites every identifier you've ever issued: it's a
+> data migration, not a configuration flip.
+
+The recipe, spelled out for a port to another language:
+
+1. Fold the seed's UTF-8 bytes into 64 bits with FNV-1a: `h = 0xcbf29ce484222325`, then for each
+   byte `b`, `h = (h ^ b) * 0x100000001b3`, wrapping on overflow.
+2. Run SplitMix64 from that state: `s += 0x9e3779b97f4a7c15`, `z = s`,
+   `z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9`, `z = (z ^ (z >> 27)) * 0x94d049bb133111eb`,
+   output `z ^ (z >> 31)`.
+3. Fisher–Yates down from the end: for `i` from `count - 1` down to `1`, swap position `i` with
+   position `next() % (i + 1)`.
+
+All three steps are pinned by vectors in `GoldenTests` — raw PRNG outputs, permuted alphabets, and
+the identifiers that come out of them — so a port can be checked against them directly.
+
+## Bootstrap
+
+`ID.Configuration` holds both format choices, the alphabet and the separator mode, and `ID.bootstrap`
+installs one for the process:
+
+```swift
+// at startup, before the first identifier is created or parsed
+try ID.bootstrap(
+    alphabet: try .init("346789ABCDEFGHJKMNPQRTVWXY"),
+    seed: secretFromEnvironment,
+    separatorMode: .modern
+)
+```
+
+`ID.configuration` reads it back, and is read-only on purpose: changing the format is what bootstrap
+is for. Everything that creates or parses identifiers falls back to it one dimension at a time, so a
+per-call `alphabet:` or `mode:` argument overrides just that dimension and leaves the rest installed:
+
+```swift
+// alphabet from this call, separator mode from the installed configuration
+let parsed = try ID.parse(input: incoming, alphabet: alphabetOfSomeOtherService)
+```
+
+Bootstrapping the same configuration again does nothing, so repeated identical calls from several
+entry points are harmless. A *different* configuration throws
+`ID.BootstrapError.AlreadyBootstrapped` — identifiers already handed out would stop being readable,
+so replacing one has to be deliberate:
+
+```swift
+try ID.bootstrap(newConfiguration, replacingExisting: true)
+```
+
+Two things bootstrap deliberately doesn't do. It doesn't stop you from creating identifiers *before*
+calling it — those come out spelled with the default alphabet, so bootstrap first, from a single
+place. And it isn't synchronized: the configuration is process-wide `nonisolated(unsafe)` state,
+written once at startup and only read afterwards. Code that needs a second format at the same time —
+tests included — should pass `alphabet:` / `mode:` per call rather than re-bootstrapping, which is
+how this library's own test suite stays parallel-safe.
 
 ## Quick start
 
@@ -272,6 +440,8 @@ branches (regular ID vs. external UUID) never overlap.
   regardless of the actual `rawValues`.
 - Prefix and body are separated by exactly one underscore — or by the legacy padding, depending on
   the [separator mode](#separator-formats-and-compatibility). Any other separator is rejected.
+- An [alphabet](#alphabets) holds 3 to 93 unique symbols, each of them printable ASCII, never a space
+  and never the reserved `_`.
 
 ## Development
 
