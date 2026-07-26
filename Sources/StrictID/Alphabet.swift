@@ -15,9 +15,14 @@ extension ID {
     /// value of every character while shuffling its internal alphabet, so anything outside ASCII —
     /// Cyrillic, Greek, emoji — is out of reach of the algorithm, not just of this type.
     ///
-    /// > Note: only `default`'s 62 alphanumerics are safe everywhere without escaping. An alphabet
-    /// > drawing on the punctuation in `allowedSymbols` can produce identifiers that need escaping
-    /// > in URLs, shells, CSV or JSON — that's your call to make.
+    /// > Warning: only `default`'s 62 alphanumerics travel everywhere unescaped. `allowedSymbols` is
+    /// > everything *sqids* can encode, which is a far lower bar than everything a URL, a JSON
+    /// > string, a shell command, a filename, a CSV field or a regex can carry as-is: an alphabet
+    /// > reaching into its punctuation yields identifiers like `O_C[4<KD}u` or `O_x?y&z`, which need
+    /// > percent-encoding, quoting or escaping in each of those, and change what a URL *means* if
+    /// > they don't get it. If you want more symbols and still no escaping, stop at the RFC 3986
+    /// > unreserved set — `default.symbols + ["-", ".", "~"]`, 65 symbols. See the README for what
+    /// > the wider alphabet actually buys (one character on the longest possible identifier).
     public struct Alphabet: Sendable {
         public enum E: Error {
             /// An alphabet needs at least `Alphabet.minCount` symbols
@@ -72,6 +77,10 @@ extension ID {
         /// Every symbol an alphabet may draw on: printable ASCII in code-point order, minus the
         /// space and the reserved underscore. The 62 alphanumerics come first, so
         /// `allowedSymbols.prefix(62)` is exactly `default`.
+        ///
+        /// The 31 that follow are punctuation, and identifiers spelled with them are **not** safe to
+        /// hand to a URL, a JSON string, a shell, a filename or a regex unescaped — see the warning
+        /// on `Alphabet` before reaching for the full set.
         public static let allowedSymbols: [Character] = {
             let printable = (0x21...0x7e).map { Character(UnicodeScalar(UInt8($0))) }
             let alphanumeric = printable.filter { $0.isLetter || $0.isNumber }

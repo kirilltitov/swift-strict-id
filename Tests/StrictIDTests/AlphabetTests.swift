@@ -104,6 +104,39 @@ struct AlphabetTests {
         }
     }
 
+    @Test("The URL-safe alphabet the README recommends is valid and stays URL-safe")
+    func urlSafeAlphabet() throws {
+        // RFC 3986 unreserved characters are alphanumerics plus `-._~`; `_` is spent on the prefix
+        // separator, which is itself unreserved, so identifiers need no percent-encoding anywhere.
+        let urlSafe = try ID.Alphabet(ID.Alphabet.default.symbols + ["-", ".", "~"])
+        #expect(urlSafe.count == 65)
+
+        let unreserved = Set(ID.Alphabet.default.symbols + ["-", ".", "~", "_"])
+        for identifier in [Int64(0), 42, 999_999, ID.maxIdentifier] {
+            for mode in ID.SeparatorMode.allCases {
+                let id = try ID(
+                    shardNumber: 999_999,
+                    identifier: identifier,
+                    entityKind: "O",
+                    alphabet: urlSafe,
+                    mode: mode
+                )
+                #expect(id.stringValue.allSatisfy { unreserved.contains($0) }, "\(id.stringValue) is URL-safe")
+                #expect(try ID.parse(input: id.stringValue, alphabet: urlSafe, mode: mode) == id)
+            }
+        }
+
+        // And what the wider alphabet buys over it: one character on the longest identifier.
+        let widest = try ID.Alphabet(ID.Alphabet.allowedSymbols)
+        let longest = { (alphabet: ID.Alphabet) throws -> Int in
+            try ID(shardNumber: 999_999, identifier: ID.maxIdentifier, entityKind: "O", alphabet: alphabet)
+                .stringValue.count
+        }
+        #expect(try longest(.default) == 20)
+        #expect(try longest(urlSafe) == 20)
+        #expect(try longest(widest) == 19)
+    }
+
     @Test("A custom alphabet spells the same numbers differently")
     func customDiffersFromDefault() throws {
         let permuted = ID.Alphabet.default.shuffled(seed: "not the default order")

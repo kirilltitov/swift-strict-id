@@ -166,20 +166,49 @@ that's a property of sqids and of this wire format, not a limitation of the Swif
 different matter — those are arbitrary strings and may hold anything.)
 
 Invalid symbols are rejected when the alphabet is built, each with its own error: `TooFewSymbols`,
-`DuplicateSymbols`, `ReservedSeparatorSymbol`, `NonASCIISymbols`, `NonPrintableSymbols`. Keep in mind
-that only the default 62 are safe everywhere unescaped — an alphabet reaching into the punctuation of
-`allowedSymbols` can produce identifiers like `O_C[4<KD}u`, which need escaping in URLs, shells, CSV
-or JSON.
+`DuplicateSymbols`, `ReservedSeparatorSymbol`, `NonASCIISymbols`, `NonPrintableSymbols`.
 
-Fewer symbols means longer bodies, more symbols means shorter ones. The same
-`(shardNumber: 7, identifier: 12345, entityKind: "O")` across four alphabets:
+> [!CAUTION]
+> **The wide alphabet is not safe to paste anywhere.** `allowedSymbols` is everything *sqids* can
+> encode, which is a much lower bar than "everything your systems can carry unescaped". Reach past
+> the 62 alphanumerics and identifiers start coming out like `O_C[4<KD}u`, `O_$a"b\c` or `O_x?y&z`,
+> which means:
+>
+> - **URLs** — `# ? & % + / = ;` change what a URL *means* rather than just looking odd, so every
+>   identifier has to be percent-encoded on the way into a path, query or fragment, and decoded on
+>   the way out. Miss one spot and you truncate or split the identifier silently.
+> - **JSON, XML, HTML** — `"` and `\` need escaping in JSON strings; `< > &` need it in XML/HTML.
+> - **Shells, filenames, CSV** — `$ ` `` ` `` `* ~ | < > ; & ( ) '` are shell metacharacters, `/`
+>   can't appear in a filename, `,` and `"` break naive CSV.
+> - **Logs, regexes, globs** — `. * + ? [ ] ( ) { } | ^ $ \` are regex metacharacters, so grepping
+>   for an identifier stops working the way you expect.
+>
+> Only the default 62 travel through all of that unescaped. If you want a bigger alphabet that's
+> still safe everywhere, the RFC 3986 *unreserved* set is the ceiling — alphanumerics plus `-`, `.`,
+> `~` (and `_`, which this format already spends on the separator):
+>
+> ```swift
+> let urlSafe = try ID.Alphabet(ID.Alphabet.default.symbols + ["-", ".", "~"])  // 65 symbols
+> ```
+>
+> Everything beyond those 65 buys you a fraction of a character in length and hands you an escaping
+> problem in every layer the identifier passes through. The library won't stop you — the point of
+> `allowedSymbols` is to expose the whole range sqids permits — but this is the trade you're making.
 
-| Alphabet               | Size | `stringValue`                   |
-|------------------------|-----:|---------------------------------|
-| `"abc"`                | 3    | `O_ccccbbccbbbbabbccccccbbbccb` |
-| `"0123456789abcdef"`   | 16   | `O_bd747ae812`                  |
-| `.default`             | 62   | `O_ApB7Jf7b0`                   |
-| `allowedSymbols`       | 93   | `O_C[4<KD}u`                    |
+Fewer symbols means longer bodies, more symbols means shorter ones, and the gain flattens out fast.
+The same `(shardNumber: 7, identifier: 12345, entityKind: "O")` across five alphabets:
+
+| Alphabet                       | Size | `stringValue`                   | Safe unescaped?           |
+|--------------------------------|-----:|---------------------------------|---------------------------|
+| `"abc"`                        | 3    | `O_ccccbbccbbbbabbccccccbbbccb` | yes                       |
+| `"0123456789abcdef"`           | 16   | `O_bd747ae812`                  | yes                       |
+| `.default`                     | 62   | `O_ApB7Jf7b0`                   | yes                       |
+| `.default.symbols + ["-",".","~"]` | 65 | `O_Ho8rT-WvQ`                 | yes (RFC 3986 unreserved) |
+| `allowedSymbols`               | 93   | `O_C[4<KD}u`                    | **no** — see above        |
+
+How little the wide alphabet buys is worth seeing plainly: the longest identifier this format can
+produce (`identifier: ID.maxIdentifier`, a six-figure shard) is 20 characters on the default 62, 20
+on the 65-symbol unreserved set, and 19 on all 93. One character, in exchange for escaping.
 
 ### Permuting the alphabet with a secret seed
 
