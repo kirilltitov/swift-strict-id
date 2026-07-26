@@ -233,6 +233,24 @@ struct IDTests {
         }
     }
 
+    @Test(
+        "Error: negative values can't be encoded",
+        arguments: [[Int64(-1), 0, 0], [0, -1, 0], [0, 0, -1]])
+    func negativeRawValues(rawValues: [Int64]) {
+        // sqids encodes non-negative numbers only, so a negative shard number — or a hand-rolled
+        // negative element — is a ParseError rather than a quietly wrong string.
+        #expect(throws: ID.E.ParseError) {
+            try ID(rawValues: rawValues, entityKind: "P")
+        }
+    }
+
+    @Test("Error: a negative shardNumber can't be encoded either")
+    func negativeShardNumber() {
+        #expect(throws: ID.E.ParseError) {
+            try ID(shardNumber: -1, identifier: 42, entityKind: "P")
+        }
+    }
+
     @Test("parse: ParseError on sqids overflow (a too-long body)")
     func parseErrorSqidsOverflow() {
         // sqids throws an overflow error when decoding a string that overflows Int64.
@@ -249,7 +267,7 @@ struct IDTests {
     @Test("parse: InvalidInputRawValuesSize when sqids decodes a count != 3")
     func parseErrorWrongRawValuesCount() {
         // Encode 2 values instead of 3 and substitute them as the ID body.
-        let twoValueEncoded = try! ID.sqids.encode([1337, 42])
+        let twoValueEncoded = try! ID.Alphabet.default.sqids.encode([1337, 42])
         let fakeInput = "X__" + twoValueEncoded
         #expect {
             try ID.parse(input: fakeInput)

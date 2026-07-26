@@ -120,6 +120,74 @@ struct GoldenTests {
         }
     }
 
+    // MARK: - Alphabets and seeded permutations
+
+    @Test("The built-in alphabet and the symbols an alphabet may draw on")
+    func goldenAlphabets() {
+        #expect(ID.Alphabet.default.string == "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+        #expect(
+            String(ID.Alphabet.allowedSymbols)
+                == "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~"
+        )
+    }
+
+    @Test("The seed PRNG produces the documented stream")
+    func goldenSeededGenerator() {
+        // FNV-1a over the seed's UTF-8 bytes, then SplitMix64. An empty seed leaves the FNV offset
+        // basis as the state, so this pins both halves of the recipe for a port to another language.
+        var empty = ID.Alphabet.SeededGenerator(seed: "")
+        #expect(empty.next() == 14_087_677_454_934_409_008)
+        #expect(empty.next() == 1_156_539_639_830_188_822)
+        #expect(empty.next() == 6_107_907_394_010_225_435)
+
+        var seeded = ID.Alphabet.SeededGenerator(seed: "hunter2")
+        #expect(seeded.next() == 10_347_347_011_796_497_037)
+        #expect(seeded.next() == 6_732_178_486_399_285_810)
+        #expect(seeded.next() == 6_619_118_641_959_921_864)
+    }
+
+    @Test("Seeded permutations of the built-in alphabet")
+    func goldenSeededAlphabets() {
+        #expect(
+            ID.Alphabet.default.shuffled(seed: "hunter2").string
+                == "cmRaEp0BygGkbesDjwKT7CuNqIY9XUzWn28P4HVtxZifdSMoQ5lv6FAJhrLO31"
+        )
+        #expect(
+            ID.Alphabet.default.shuffled(seed: "GkPmS0/HH5Sb4pOXwm+3RCkuVezYX5B8AeAvXtnGqBQ=").string
+                == "hWbxgRa7st5j0zZFo2eCnqX9Jfd4EUl86TvG3V1wrYBSOkHyApmLcKIPDiQMuN"
+        )
+    }
+
+    @Test("Identifiers spelled with alphabets other than the built-in one")
+    func goldenCustomAlphabetIDs() throws {
+        // (shard 1337, identifier 42, kind "P") is `P_zuYa75Z5` on the built-in alphabet.
+        let seeded = ID.Alphabet.default.shuffled(seed: "hunter2")
+        #expect(
+            try ID(shardNumber: 1337, identifier: 42, entityKind: "P", alphabet: seeded).stringValue == "P_muvLYumk"
+        )
+
+        // (shard 7, identifier 12345, kind "O") is `O_ApB7Jf7b0` on the built-in alphabet.
+        let hex = try ID.Alphabet("0123456789abcdef")
+        let smallest = try ID.Alphabet("abc")
+        let widest = try ID.Alphabet(ID.Alphabet.allowedSymbols)
+
+        #expect(try ID(shardNumber: 7, identifier: 12345, entityKind: "O", alphabet: hex).stringValue == "O_bd747ae812")
+        #expect(
+            try ID(shardNumber: 7, identifier: 12345, entityKind: "O", alphabet: smallest).stringValue
+                == "O_ccccbbccbbbbabbccccccbbbccb"
+        )
+        #expect(
+            try ID(shardNumber: 7, identifier: 12345, entityKind: "O", alphabet: widest).stringValue == "O_C[4<KD}u"
+        )
+
+        // External UUIDs go through the same alphabet as everything else.
+        let uuid = try #require(UUID(uuidString: "f47ac10b-58cc-4372-b567-0e02b2c3d479"))
+        #expect(
+            try ID(externalUUID: uuid, alphabet: hex).stringValue
+                == "_U_ed6dc3f578f97b01b291d15b95cc065a909a1"
+        )
+    }
+
     @Test("External UUIDs match the golden vectors from the Go strictid library", arguments: ID.SeparatorMode.allCases)
     func goldenExternalUUIDMatchesGo(mode: ID.SeparatorMode) throws {
         struct Vec {

@@ -91,14 +91,6 @@ public struct ID: Sendable {
         public var acceptsModern: Bool { self != .strictLegacy }
     }
 
-    /// The `SeparatorMode` used by every API that isn't given an explicit `mode:` argument.
-    ///
-    /// Set it once at startup, before any identifier is created or parsed: it's process-wide
-    /// mutable state with no synchronization (hence `nonisolated(unsafe)`) and is meant as a
-    /// deployment switch, not something to flip at runtime. When a single process has to handle
-    /// both formats at once, pass `mode:` explicitly instead of reaching for this.
-    public nonisolated(unsafe) static var separatorMode: SeparatorMode = .modern
-
     @usableFromInline
     internal static let underscore: Character = "_"
 
@@ -107,34 +99,18 @@ public struct ID: Sendable {
     @usableFromInline
     internal static let underscores: [String] = (0...2).map { String(repeating: "_", count: $0) }
 
-    public static let rawAlphabet = Array<Character>([
-        "0", "1", "2", "3", "4",
-        "5", "6", "7", "8", "9",
-        "a", "b", "c", "d", "e",
-        "f", "g", "h", "i", "j",
-        "k", "l", "m", "n", "o",
-        "p", "q", "r", "s", "t",
-        "u", "v", "w", "x", "y",
-        "z",
-        "A", "B", "C", "D", "E",
-        "F", "G", "H", "I", "J",
-        "K", "L", "M", "N", "O",
-        "P", "Q", "R", "S", "T",
-        "U", "V", "W", "X", "Y",
-        "Z",
-        // also an underscore is a valid character, but it's reserved for prefixes
-    ])
+    /// The symbols of the installed alphabet, in order — `Alphabet.default`'s digits, uppercase and
+    /// lowercase Latin unless `bootstrap` installed something else. The underscore is never among
+    /// them: it's reserved for the prefix separator.
+    public static var rawAlphabet: [Character] { Self.configuration.alphabet.symbols }
 
-    public static let alphabet: String = String(Self.rawAlphabet.sorted())
-    public static let alphabetSize = Self.alphabet.count
-    public static let fullAlphabet = Self.alphabet + String(Self.underscore)
-    public static let fullAlphabetSize = Self.fullAlphabet.count
+    public static var alphabet: String { Self.configuration.alphabet.string }
+    public static var alphabetSize: Int { Self.configuration.alphabet.count }
 
-    @usableFromInline
-    internal static let sqids: Sqids = Sqids(
-        alphabet: Self.alphabet,
-        minLength: Self.minLength
-    )
+    /// The installed alphabet plus the prefix separator — every character a string value can hold,
+    /// as long as the entity prefixes are drawn from the alphabet too.
+    public static var fullAlphabet: String { Self.alphabet + String(Self.underscore) }
+    public static var fullAlphabetSize: Int { Self.alphabetSize + 1 }
 
     /// The width the prefix zone (`entityKind` plus underscore padding) is filled up to in the
     /// legacy format. Irrelevant to the modern one, where the separator is always a single
@@ -175,16 +151,16 @@ public struct ID: Sendable {
     }
 
     @inlinable
-    public init(rawValues: RawValues, entityKind: String, mode: SeparatorMode = ID.separatorMode) throws(E) {
+    public init(
+        rawValues: RawValues,
+        entityKind: String,
+        alphabet: Alphabet = ID.configuration.alphabet,
+        mode: SeparatorMode = ID.configuration.separatorMode
+    ) throws(E) {
         guard rawValues.count == 3 else { throw E.InvalidInputRawValuesSize }
         guard 1...2 ~= entityKind.count else { throw E.InvalidEntityPrefixLength }
         guard rawValues[2] <= Self.maxIdentifier else { throw E.TooBigIdentifier }
-        let encoded: String
-        do {
-            encoded = try Self.sqids.encode(rawValues)
-        } catch {
-            throw E.ParseError
-        }
+        let encoded = try alphabet.encode(rawValues)
         let sv = entityKind + Self.separator(for: entityKind, mode: mode) + encoded
         try self.init(rawValues: rawValues, entityKind: entityKind, stringValue: sv)
     }
@@ -194,7 +170,8 @@ public struct ID: Sendable {
         shardNumber: RawValue,
         identifier: RawValue,
         entityKind: String,
-        mode: SeparatorMode = ID.separatorMode
+        alphabet: Alphabet = ID.configuration.alphabet,
+        mode: SeparatorMode = ID.configuration.separatorMode
     ) throws(E) {
         try self.init(
             rawValues: [
@@ -203,6 +180,7 @@ public struct ID: Sendable {
                 identifier,
             ],
             entityKind: entityKind,
+            alphabet: alphabet,
             mode: mode
         )
     }
@@ -212,12 +190,14 @@ public struct ID: Sendable {
         shardNumber: RawValue,
         identifier: RawValue,
         entityKind: IDPrefixEnum,
-        mode: SeparatorMode = ID.separatorMode
+        alphabet: Alphabet = ID.configuration.alphabet,
+        mode: SeparatorMode = ID.configuration.separatorMode
     ) throws(E) where IDPrefixEnum.RawValue == String {
         try self.init(
             shardNumber: shardNumber,
             identifier: identifier,
             entityKind: entityKind.rawValue,
+            alphabet: alphabet,
             mode: mode
         )
     }
@@ -228,9 +208,15 @@ public struct ID: Sendable {
         secondValue: RawValue,
         thirdValue: RawValue,
         entityKind: String,
-        mode: SeparatorMode = ID.separatorMode
+        alphabet: Alphabet = ID.configuration.alphabet,
+        mode: SeparatorMode = ID.configuration.separatorMode
     ) throws(E) {
-        try self.init(rawValues: [firstValue, secondValue, thirdValue], entityKind: entityKind, mode: mode)
+        try self.init(
+            rawValues: [firstValue, secondValue, thirdValue],
+            entityKind: entityKind,
+            alphabet: alphabet,
+            mode: mode
+        )
     }
 
     /// The underscore run that goes between the prefix and the body.
@@ -260,12 +246,16 @@ public struct ID: Sendable {
         throw E.InvalidPrefixSeparator
     }
 
-    public static func parse(input: String, mode: SeparatorMode = ID.separatorMode) throws(E) -> Self {
+    public static func parse(
+        input: String,
+        alphabet: Alphabet = ID.configuration.alphabet,
+        mode: SeparatorMode = ID.configuration.separatorMode
+    ) throws(E) -> Self {
         // External UUID: the prefix starts with the reserved underscore marker. Regular
         // identifiers never start with `_`, so this branch is strictly additive — all the
         // logic below is untouched and keeps handling them exactly as before.
         if input.first == Self.underscore {
-            return try Self.parseExternal(input: input)
+            return try Self.parseExternal(input: input, alphabet: alphabet)
         }
 
         // The prefix zone is a leading run of non-`_` characters (the `entityKind`) followed by a
@@ -292,13 +282,7 @@ public struct ID: Sendable {
         }
 
         let rawID = String(input[prefixEnd...])
-        let rawValues: RawValues
-
-        do {
-            rawValues = try Self.sqids.decode(rawID)
-        } catch {
-            throw E.ParseError
-        }
+        let rawValues = try alphabet.decode(rawID)
 
         guard rawValues.count == 3 else {
             throw E.InvalidInputRawValuesSize
@@ -331,14 +315,18 @@ extension ID {
     ///
     /// - Parameter entityKind: the external prefix — the marker `_` and exactly one non-`_`
     ///   character (for example `"_U"`).
-    public init(externalUUID uuid: UUID, entityKind: String = ID.defaultExternalEntityKind) throws(E) {
+    public init(
+        externalUUID uuid: UUID,
+        entityKind: String = ID.defaultExternalEntityKind,
+        alphabet: Alphabet = ID.configuration.alphabet
+    ) throws(E) {
         guard entityKind.count == 2,
             entityKind.first == Self.underscore,
             entityKind.last != Self.underscore
         else {
             throw E.InvalidExternalEntityKind
         }
-        try self.init(rawValues: Self.pack(uuid), entityKind: entityKind)
+        try self.init(rawValues: Self.pack(uuid), entityKind: entityKind, alphabet: alphabet)
     }
 
     /// The reconstructed external UUID, if this `ID` wraps one (prefix starts with `_`);
@@ -352,7 +340,7 @@ extension ID {
     /// one tag character), so its separator is a single underscore in **both** formats — the prefix
     /// zone occupies exactly `prefixSize` characters and the body starts at that offset regardless
     /// of `SeparatorMode`, which is why this branch needs no mode of its own.
-    private static func parseExternal(input: String) throws(E) -> Self {
+    private static func parseExternal(input: String, alphabet: Alphabet) throws(E) -> Self {
         guard input.count >= Self.prefixSize else { throw E.InvalidInputStringSize }
         let regionEnd = input.index(input.startIndex, offsetBy: Self.prefixSize)
 
@@ -362,12 +350,7 @@ extension ID {
         let entityKind = region
 
         let body = String(input[regionEnd...])
-        let rawValues: RawValues
-        do {
-            rawValues = try Self.sqids.decode(body)
-        } catch {
-            throw E.ParseError
-        }
+        let rawValues = try alphabet.decode(body)
         guard rawValues.count == 3 else { throw E.InvalidInputRawValuesSize }
 
         return try self.init(rawValues: rawValues, entityKind: entityKind, stringValue: input)
