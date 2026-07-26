@@ -29,16 +29,18 @@ struct IDTests {
 
     // MARK: - String format
 
-    @Test("Single-character entityKind yields a double underscore")
+    @Test("Single-character entityKind yields a single underscore by default")
     func stringFormatSingleChar() throws {
         let id = try ID(shardNumber: 0, identifier: 1, entityKind: "P")
-        #expect(id.stringValue.hasPrefix("P__"))
+        #expect(id.stringValue.hasPrefix("P_"))
+        #expect(!id.stringValue.hasPrefix("P__"))
     }
 
     @Test("Two-character entityKind yields a single underscore")
     func stringFormatTwoChars() throws {
         let id = try ID(shardNumber: 0, identifier: 1, entityKind: "PL")
         #expect(id.stringValue.hasPrefix("PL_"))
+        #expect(!id.stringValue.hasPrefix("PL__"))
     }
 
     @Test("String length is at least 6 characters")

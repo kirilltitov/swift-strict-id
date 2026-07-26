@@ -23,11 +23,11 @@ public struct IDOf<T: IDPrefixable>: Sendable {
         self.base = base
     }
 
-    public static func parse(input: String) throws(E) -> Self {
+    public static func parse(input: String, mode: ID.SeparatorMode = ID.separatorMode) throws(E) -> Self {
         let baseId: ID
 
         do throws(ID.E) {
-            baseId = try ID.parse(input: input)
+            baseId = try ID.parse(input: input, mode: mode)
         } catch {
             throw E.ParseError(error)
         }
@@ -43,8 +43,10 @@ public extension ID {
 }
 
 extension IDOf: Equatable {
+    /// Delegates to `ID`'s equality, so it's the identifier's identity that's compared rather than
+    /// its spelling — see `ID.==`.
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.stringValue == rhs.stringValue
+        lhs.base == rhs.base
     }
 }
 
